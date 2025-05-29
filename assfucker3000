@@ -161,6 +161,29 @@ local function makeButton(text, pos, callback)
 	return btn
 end
 
+-- Respawns
+local function hookCharacter(player)
+	player.CharacterAdded:Connect(function(char)
+		char:WaitForChild("Head", 5)
+		wait(0.1) -- small delay ensures parts are fully initialized
+		if espEnabled and player.Team ~= LocalPlayer.Team then
+			updateESP()
+		end
+	end)
+end
+
+for _, player in ipairs(Players:GetPlayers()) do
+	if player ~= LocalPlayer then
+		hookCharacter(player)
+	end
+end
+
+Players.PlayerAdded:Connect(function(player)
+	if player ~= LocalPlayer then
+		hookCharacter(player)
+	end
+end)
+
 -- Ring
 local ring = Instance.new("Frame", gui)
 ring.Size = UDim2.new(0, ringRadius * 2, 0, ringRadius * 2)
@@ -217,33 +240,36 @@ local function updateESP()
 		item:Destroy()
 	end
 
-	for _, p in ipairs(Players:GetPlayers()) do
-		if p ~= LocalPlayer and p.Team ~= LocalPlayer.Team and p.Character and p.Character:FindFirstChild("Head") then
-			local head = p.Character.Head
-			local screenPos, visible = worldToScreen(head.Position)
+	for _, player in ipairs(Players:GetPlayers()) do
+		if player ~= LocalPlayer and player.Team ~= LocalPlayer.Team then
+			local character = player.Character
+			if character and character:FindFirstChild("Head") then
+				local head = character.Head
+				local screenPos, visible = worldToScreen(head.Position)
 
-			if visible then
-				-- Name tag
-				local tag = Instance.new("TextLabel", espFolder)
-				tag.Size = UDim2.new(0, 120, 0, 20)
-				tag.Position = UDim2.new(0, screenPos.X - 60, 0, screenPos.Y - 35)
-				tag.BackgroundTransparency = 1
-				tag.Text = p.Name
-				tag.TextSize = 16
-				tag.TextColor3 = Color3.fromRGB(255, 0, 0) -- Red for enemies
-				tag.Font = Enum.Font.SourceSansBold
-				tag.ZIndex = 20
+				if visible then
+					-- Name tag
+					local tag = Instance.new("TextLabel", espFolder)
+					tag.Size = UDim2.new(0, 120, 0, 20)
+					tag.Position = UDim2.new(0, screenPos.X - 60, 0, screenPos.Y - 35)
+					tag.BackgroundTransparency = 1
+					tag.Text = player.Name
+					tag.TextSize = 16
+					tag.TextColor3 = Color3.fromRGB(255, 0, 0)
+					tag.Font = Enum.Font.SourceSansBold
+					tag.ZIndex = 20
 
-				-- Highlight (outline glow)
-				if not p.Character:FindFirstChild("ESPHighlight") then
-					local highlight = Instance.new("Highlight")
-					highlight.Name = "ESPHighlight"
-					highlight.FillColor = Color3.new(1, 0, 0)
-					highlight.FillTransparency = 0.2
-					highlight.OutlineColor = Color3.new(1, 0, 0)
-					highlight.OutlineTransparency = 0
-					highlight.Adornee = p.Character
-					highlight.Parent = p.Character
+					-- Add highlight if not already present
+					if not character:FindFirstChild("ESPHighlight") then
+						local highlight = Instance.new("Highlight")
+						highlight.Name = "ESPHighlight"
+						highlight.FillColor = Color3.new(1, 0, 0)
+						highlight.FillTransparency = 0.2
+						highlight.OutlineColor = Color3.new(1, 0, 0)
+						highlight.OutlineTransparency = 0
+						highlight.Adornee = character
+						highlight.Parent = character
+					end
 				end
 			end
 		end
@@ -271,14 +297,21 @@ local btnAim = makeButton("Toggle Aim Assist", 25, function()
 end)
 
 local btnESP = makeButton("Toggle ESP", 60, function()
-	espEnabled = not espEnabled
-	if not espEnabled then
-		for _, v in ipairs(espFolder:GetChildren()) do
-			v:Destroy()
-		end
-	else
-		updateESP()
-	end
+    espEnabled = not espEnabled
+    if espEnabled then
+        updateESP()
+    else
+        -- Remove all ESP GUI elements
+        for _, v in ipairs(espFolder:GetChildren()) do
+            v:Destroy()
+        end
+        -- Remove all highlights from enemy characters
+        for _, player in ipairs(Players:GetPlayers()) do
+            if player.Character and player.Character:FindFirstChild("ESPHighlight") then
+                player.Character.ESPHighlight:Destroy()
+            end
+        end
+    end
 end)
 
 local btnAimTarget
