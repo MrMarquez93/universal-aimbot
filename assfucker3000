@@ -1,0 +1,368 @@
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local Camera = workspace.CurrentCamera
+local CoreGui = game:GetService("CoreGui")
+local LocalPlayer = Players.LocalPlayer
+
+-- State
+local isAiming = false
+local aimAssistEnabled = false
+local espEnabled = false
+local ringRadius = 100
+local minimized = false
+local aimTargetPart = "Head" -- or "Body"
+
+-- Highlight tracking
+local highlights = {}
+
+local function applyHighlightToCharacter(player)
+    if highlights[player] then
+        highlights[player]:Destroy()
+        highlights[player] = nil
+    end
+
+    local character = player.Character
+    if character then
+        local highlight = Instance.new("Highlight")
+        highlight.Adornee = character
+        highlight.FillColor = Color3.new(1, 0, 0)        -- Red fill
+        highlight.OutlineColor = Color3.new(1, 0, 0)     -- Red outline
+        highlight.FillTransparency = 0.3
+        highlight.Parent = CoreGui
+        highlights[player] = highlight
+    end
+end
+
+Players.PlayerAdded:Connect(function(player)
+    player.CharacterAdded:Connect(function()
+        applyHighlightToCharacter(player)
+    end)
+end)
+
+for _, player in ipairs(Players:GetPlayers()) do
+    if player.Character then
+        applyHighlightToCharacter(player)
+    end
+    player.CharacterAdded:Connect(function()
+        applyHighlightToCharacter(player)
+    end)
+end
+
+Players.PlayerRemoving:Connect(function(player)
+    if highlights[player] then
+        highlights[player]:Destroy()
+        highlights[player] = nil
+    end
+end)
+
+-- GUI Setup
+local gui = Instance.new("ScreenGui")
+gui.Name = " Mr_Marquez93 the GOAT"
+gui.Parent = LocalPlayer:WaitForChild("PlayerGui")
+gui.ResetOnSpawn = false
+gui.IgnoreGuiInset = true
+gui.ZIndexBehavior = Enum.ZIndexBehavior.Global
+gui.DisplayOrder = 9999
+
+-- Menu Frame
+local menu = Instance.new("Frame", gui)
+menu.Size = UDim2.new(0, 250, 0, 270)
+menu.Position = UDim2.new(0, 100, 0, 100)
+menu.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+menu.BorderSizePixel = 0
+menu.ZIndex = 10
+
+local drag = Instance.new("TextLabel", menu)
+drag.Size = UDim2.new(1, 0, 0, 20)
+drag.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
+drag.Text = " Mr_Marquez93 the GOAT"
+drag.TextColor3 = Color3.fromRGB(255, 255, 255)
+drag.TextXAlignment = Enum.TextXAlignment.Left
+drag.ZIndex = 11
+
+local closeBtn = Instance.new("TextButton", menu)
+closeBtn.Size = UDim2.new(0, 30, 0, 20)
+closeBtn.Position = UDim2.new(1, -35, 0, 0)
+closeBtn.BackgroundColor3 = Color3.fromRGB(200, 50, 50)
+closeBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+closeBtn.Text = "X"
+closeBtn.Font = Enum.Font.SourceSansBold
+closeBtn.ZIndex = 12
+
+local minimizeBtn = Instance.new("TextButton", menu)
+minimizeBtn.Size = UDim2.new(0, 30, 0, 20)
+minimizeBtn.Position = UDim2.new(1, -70, 0, 0)
+minimizeBtn.BackgroundColor3 = Color3.fromRGB(100, 100, 100)
+minimizeBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
+minimizeBtn.Text = "_"
+minimizeBtn.Font = Enum.Font.SourceSansBold
+minimizeBtn.ZIndex = 12
+
+-- Dragging
+local dragging = false
+local dragInput
+local dragStart
+local startPos
+
+local function update(input)
+	if dragging then
+		local delta = input.Position - dragStart
+		menu.Position = UDim2.new(
+			startPos.X.Scale,
+			startPos.X.Offset + delta.X,
+			startPos.Y.Scale,
+			startPos.Y.Offset + delta.Y
+		)
+	end
+end
+
+drag.InputBegan:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseButton1 then
+		dragging = true
+		dragStart = input.Position
+		startPos = menu.Position
+
+		input.Changed:Connect(function()
+			if input.UserInputState == Enum.UserInputState.End then
+				dragging = false
+			end
+		end)
+	end
+end)
+
+drag.InputChanged:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseMovement then
+		dragInput = input
+	end
+end)
+
+UserInputService.InputChanged:Connect(function(input)
+	if input == dragInput then
+		update(input)
+	end
+end)
+
+-- Helper: make buttons
+local function makeButton(text, pos, callback)
+	local btn = Instance.new("TextButton", menu)
+	btn.Size = UDim2.new(1, -10, 0, 30)
+	btn.Position = UDim2.new(0, 5, 0, pos)
+	btn.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+	btn.TextColor3 = Color3.fromRGB(255, 255, 255)
+	btn.Text = text
+	btn.ZIndex = 12
+	btn.Font = Enum.Font.SourceSansBold
+
+	btn.TextSize = 18
+	btn.TextScaled = false
+
+	btn.MouseButton1Click:Connect(callback)
+	return btn
+end
+
+-- Ring
+local ring = Instance.new("Frame", gui)
+ring.Size = UDim2.new(0, ringRadius * 2, 0, ringRadius * 2)
+ring.AnchorPoint = Vector2.new(0.5, 0.5)
+ring.Position = UDim2.new(0.5, 0, 0.5, 0)
+ring.BackgroundTransparency = 1
+ring.BorderSizePixel = 0
+ring.ZIndex = 9
+local corner = Instance.new("UICorner", ring)
+corner.CornerRadius = UDim.new(1, 0)
+local stroke = Instance.new("UIStroke", ring)
+stroke.Thickness = 2
+stroke.Color = Color3.fromRGB(255, 0, 0)
+stroke.Transparency = 0.3
+ring.Visible = false
+
+local espFolder = Instance.new("Folder", gui)
+espFolder.Name = "ESP"
+
+-- Targeting
+local function worldToScreen(pos)
+	local screenPoint, visible = Camera:WorldToViewportPoint(pos)
+	return Vector2.new(screenPoint.X, screenPoint.Y), visible
+end
+
+local function getTarget()
+	local closest = nil
+	local minDist = ringRadius
+	local screenCenter = Vector2.new(Camera.ViewportSize.X / 2, Camera.ViewportSize.Y / 2)
+
+	for _, p in ipairs(Players:GetPlayers()) do
+		if p ~= LocalPlayer and p.Character then
+			local part = aimTargetPart == "Head" and p.Character:FindFirstChild("Head")
+				or p.Character:FindFirstChild("HumanoidRootPart") or p.Character:FindFirstChild("Torso")
+
+			if part then
+				local screenPos, onScreen = worldToScreen(part.Position)
+				if onScreen then
+					local dist = (screenPos - screenCenter).Magnitude
+					if dist < minDist then
+						minDist = dist
+						closest = part
+					end
+				end
+			end
+		end
+	end
+
+	return closest
+end
+
+local function updateESP()
+	for _, item in ipairs(espFolder:GetChildren()) do
+		item:Destroy()
+	end
+
+	for _, p in ipairs(Players:GetPlayers()) do
+		if p ~= LocalPlayer and p.Team ~= LocalPlayer.Team and p.Character and p.Character:FindFirstChild("Head") then
+			local head = p.Character.Head
+			local screenPos, visible = worldToScreen(head.Position)
+
+			if visible then
+				-- Name tag
+				local tag = Instance.new("TextLabel", espFolder)
+				tag.Size = UDim2.new(0, 120, 0, 20)
+				tag.Position = UDim2.new(0, screenPos.X - 60, 0, screenPos.Y - 35)
+				tag.BackgroundTransparency = 1
+				tag.Text = p.Name
+				tag.TextSize = 16
+				tag.TextColor3 = Color3.fromRGB(255, 0, 0) -- Red for enemies
+				tag.Font = Enum.Font.SourceSansBold
+				tag.ZIndex = 20
+
+				-- Highlight (outline glow)
+				if not p.Character:FindFirstChild("ESPHighlight") then
+					local highlight = Instance.new("Highlight")
+					highlight.Name = "ESPHighlight"
+					highlight.FillColor = Color3.new(1, 0, 0)
+					highlight.FillTransparency = 0.2
+					highlight.OutlineColor = Color3.new(1, 0, 0)
+					highlight.OutlineTransparency = 0
+					highlight.Adornee = p.Character
+					highlight.Parent = p.Character
+				end
+			end
+		end
+	end
+end
+
+UserInputService.InputBegan:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseButton2 then
+		isAiming = true
+	end
+end)
+
+UserInputService.InputEnded:Connect(function(input)
+	if input.UserInputType == Enum.UserInputType.MouseButton2 then
+		isAiming = false
+	end
+end)
+
+local running = true
+
+-- GUI Buttons
+local btnAim = makeButton("Toggle Aim Assist", 25, function()
+	aimAssistEnabled = not aimAssistEnabled
+	ring.Visible = aimAssistEnabled
+end)
+
+local btnESP = makeButton("Toggle ESP", 60, function()
+	espEnabled = not espEnabled
+	if not espEnabled then
+		for _, v in ipairs(espFolder:GetChildren()) do
+			v:Destroy()
+		end
+	else
+		updateESP()
+	end
+end)
+
+local btnAimTarget
+btnAimTarget = makeButton("Aim Target: Head", 95, function()
+	if aimTargetPart == "Head" then
+		aimTargetPart = "Body"
+		btnAimTarget.Text = "Aim Target: Body"
+	else
+		aimTargetPart = "Head"
+		btnAimTarget.Text = "Aim Target: Head"
+	end
+end)
+
+-- Ring size label
+local label = Instance.new("TextLabel", menu)
+label.Size = UDim2.new(1, -10, 0, 25)
+label.Position = UDim2.new(0, 5, 0, 130)
+label.BackgroundTransparency = 1
+label.TextColor3 = Color3.fromRGB(255, 255, 255)
+label.Text = "Set Ring Size:"
+label.TextXAlignment = Enum.TextXAlignment.Left
+label.ZIndex = 12
+label.Font = Enum.Font.SourceSansBold
+label.TextSize = 18
+
+-- Ring size input box
+local textbox = Instance.new("TextBox", menu)
+textbox.Size = UDim2.new(1, -10, 0, 40)
+textbox.Position = UDim2.new(0, 5, 0, 155)
+textbox.Text = tostring(ringRadius)
+textbox.ClearTextOnFocus = false
+textbox.BackgroundColor3 = Color3.fromRGB(50, 50, 50)
+textbox.TextColor3 = Color3.fromRGB(255, 255, 255)
+textbox.ZIndex = 12
+textbox.Font = Enum.Font.SourceSansBold
+textbox.TextSize = 20
+
+textbox.FocusLost:Connect(function(enterPressed)
+	if enterPressed then
+		local val = tonumber(textbox.Text)
+		if val and val >= 20 then
+			ringRadius = val
+			ring.Size = UDim2.new(0, ringRadius * 2, 0, ringRadius * 2)
+		else
+			textbox.Text = tostring(ringRadius)
+		end
+	end
+end)
+
+closeBtn.MouseButton1Click:Connect(function()
+	gui.Enabled = false
+	running = false
+end)
+
+minimizeBtn.MouseButton1Click:Connect(function()
+	minimized = not minimized
+	if minimized then
+		menu.Size = UDim2.new(0, 250, 0, 20)
+		btnAim.Visible = false
+		btnESP.Visible = false
+		btnAimTarget.Visible = false
+		label.Visible = false
+		textbox.Visible = false
+		closeBtn.Visible = false
+	else
+		menu.Size = UDim2.new(0, 250, 0, 270)
+		btnAim.Visible = true
+		btnESP.Visible = true
+		btnAimTarget.Visible = true
+		label.Visible = true
+		textbox.Visible = true
+		closeBtn.Visible = true
+	end
+end)
+
+RunService.Heartbeat:Connect(function()
+	if not running then return end
+	if aimAssistEnabled and isAiming then
+		local target = getTarget()
+		if target then
+			Camera.CFrame = CFrame.new(Camera.CFrame.Position, target.Position)
+		end
+	end
+	if espEnabled then
+		updateESP()
+	end
+end)
